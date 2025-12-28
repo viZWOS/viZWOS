@@ -33,15 +33,12 @@ list(APPEND SOURCE
 add_library(msvcrt MODULE ${SOURCE})
 set_module_type(msvcrt win32dll ENTRYPOINT DllMain 12)
 add_dependencies(msvcrt psdk)
-target_link_libraries(msvcrt crt cpprt wine ${PSEH_LIB})
+target_link_libraries(msvcrt crt vcruntime cpprt wine ${PSEH_LIB})
 
 if(MSVC)
     # export of deleting destructor "name"
     target_link_options(msvcrt PRIVATE "/ignore:4102")
     set_property(TARGET libmsvcrt APPEND PROPERTY STATIC_LIBRARY_OPTIONS "/ignore:4102")
-    if(ARCH STREQUAL "i386")
-        target_sources(libmsvcrt PRIVATE $<TARGET_OBJECTS:ftol2_sse>)
-    endif()
 endif()
 
 add_importlibs(msvcrt kernel32 ntdll)

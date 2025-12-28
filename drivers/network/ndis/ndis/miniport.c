@@ -2028,7 +2028,7 @@ NdisIPnPStartDevice(
       if (NdisStatus == NDIS_STATUS_SUCCESS)
         Adapter->NdisMiniportBlock.BusType = ConfigParam->ParameterData.IntegerData;
       else
-        Adapter->NdisMiniportBlock.BusType = Isa;
+        Adapter->NdisMiniportBlock.BusType = NdisInterfaceIsa;
     }
 
   Status = IoGetDeviceProperty(Adapter->NdisMiniportBlock.PhysicalDeviceObject,
@@ -2312,6 +2312,11 @@ NdisIDeviceIoControl(
                                     MmGetSystemAddressForMdl(Irp->MdlAddress),
                                     &Written);
       Irp->IoStatus.Information = Written;
+      break;
+
+    case IOCTL_NDIS_RESERVED7:
+      NDIS_DbgPrint(MIN_TRACE, ("NdisIDeviceIoControl: IOCTL_NDIS_RESERVED7 UNIMPLEMENTED (CORE-13831)\n"));
+      Status = STATUS_NOT_IMPLEMENTED;
       break;
 
     default:
