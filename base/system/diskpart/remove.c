@@ -11,12 +11,11 @@
 #define NDEBUG
 #include <debug.h>
 
-BOOL
+EXIT_CODE
 remove_main(
     _In_ INT argc,
-    _In_ LPWSTR *argv)
+    _In_ PWSTR *argv)
 {
-    WCHAR szMountPoint[4];
     PWSTR pszSuffix = NULL;
     WCHAR DriveLetter = UNICODE_NULL;
     INT i, nExclusive = 0;
@@ -27,13 +26,13 @@ remove_main(
     if (CurrentVolume == NULL)
     {
         ConResPuts(StdOut, IDS_SELECT_NO_VOLUME);
-        return TRUE;
+        return EXIT_SUCCESS;
     }
 
     if (CurrentVolume->DriveLetter == UNICODE_NULL)
     {
         ConResPuts(StdOut, IDS_REMOVE_NO_LETTER);
-        return TRUE;
+        return EXIT_SUCCESS;
     }
 
     for (i = 1; i < argc; i++)
@@ -60,7 +59,7 @@ remove_main(
             else
             {
                 ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
-                return TRUE; 
+                return EXIT_SUCCESS; 
             }
         }
         else if (HasPrefix(argv[i], L"mount=", &pszSuffix))
@@ -85,14 +84,14 @@ remove_main(
         else
         {
             ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
     }
 
     if (nExclusive > 1)
     {
         ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
-        return TRUE;
+        return EXIT_SUCCESS;
     }
 
     DPRINT("VolumeName: %S\n", CurrentVolume->VolumeName);
@@ -106,38 +105,29 @@ remove_main(
         if ((DriveLetter < L'C') || (DriveLetter > L'Z'))
         {
             ConResPuts(StdOut, IDS_ASSIGN_INVALID_LETTER);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
 
         if (DriveLetter != CurrentVolume->DriveLetter)
         {
             ConResPuts(StdOut, IDS_REMOVE_WRONG_LETTER);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
-
-        szMountPoint[0] = DriveLetter;
-        szMountPoint[1] = L':';
-        szMountPoint[2] = L'\\';
-        szMountPoint[3] = UNICODE_NULL;
     }
     else
     {
-        szMountPoint[0] = CurrentVolume->DriveLetter;
-        szMountPoint[1] = L':';
-        szMountPoint[2] = L'\\';
-        szMountPoint[3] = UNICODE_NULL;
+        DriveLetter = CurrentVolume->DriveLetter;
     }
 
-    DPRINT("MountPoint: %S\n", szMountPoint);
-    bResult = DeleteVolumeMountPointW(szMountPoint);
+    bResult = DeleteDriveLetter(DriveLetter);
     if (bResult == FALSE)
     {
         ConResPuts(StdOut, IDS_REMOVE_FAIL);
-        return TRUE;
+        return EXIT_SUCCESS;
     }
 
     CurrentVolume->DriveLetter = UNICODE_NULL;
     ConResPuts(StdOut, IDS_REMOVE_SUCCESS);
 
-    return TRUE;
+    return EXIT_SUCCESS;
 }

@@ -27,7 +27,7 @@ list(APPEND SOURCE
     ntgdi/NtGdiExtTextOutW.c
     #ntgdi/NtGdiFlushUserBatch.c
     ntgdi/NtGdiGetBitmapBits.c
-    ntgdi/NtGdiGetDIBits.c
+    ntgdi/NtGdiGetDIBitsInternal.c
     #ntgdi/NtGdiGetFontResourceInfoInternalW.c
     ntgdi/NtGdiGetRandomRgn.c
     ntgdi/NtGdiGetStockObject.c
@@ -59,6 +59,7 @@ list(APPEND SOURCE
     ntuser/NtUserFindExistingCursorIcon.c
     ntuser/NtUserGetAsyncKeyState.c
     ntuser/NtUserGetClassInfo.c
+    ntuser/NtUserGetCursorInfo.c
 #    ntuser/NtUserGetIconInfo.c
     ntuser/NtUserGetKeyboardLayoutName.c
     ntuser/NtUserGetThreadState.c

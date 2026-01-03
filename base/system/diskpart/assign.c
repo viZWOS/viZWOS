@@ -11,12 +11,11 @@
 #define NDEBUG
 #include <debug.h>
 
-BOOL
+EXIT_CODE
 assign_main(
     _In_ INT argc,
     _In_ LPWSTR *argv)
 {
-    WCHAR szMountPoint[4];
     PWSTR pszSuffix = NULL;
     WCHAR DriveLetter = UNICODE_NULL;
     INT i, nExclusive = 0;
@@ -27,7 +26,7 @@ assign_main(
     if (CurrentVolume == NULL)
     {
         ConResPuts(StdOut, IDS_SELECT_NO_VOLUME);
-        return TRUE;
+        return EXIT_SUCCESS;
     }
 
     for (i = 1; i < argc; i++)
@@ -55,7 +54,7 @@ assign_main(
             else
             {
                 ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
-                return TRUE; 
+                return EXIT_SUCCESS; 
             }
         }
         else if (HasPrefix(argv[i], L"mount=", &pszSuffix))
@@ -71,14 +70,14 @@ assign_main(
         else
         {
             ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
     }
 
     if (nExclusive > 1)
     {
         ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
-        return TRUE;
+        return EXIT_SUCCESS;
     }
 
     DPRINT1("VolumeName: %S\n", CurrentVolume->VolumeName);
@@ -92,29 +91,24 @@ assign_main(
         if ((DriveLetter < L'C') || (DriveLetter > L'Z'))
         {
             ConResPuts(StdOut, IDS_ASSIGN_INVALID_LETTER);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
 
         if (DriveLetter == CurrentVolume->DriveLetter)
         {
             ConResPuts(StdOut, IDS_ASSIGN_ALREADY_ASSIGNED);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
     }
 
     if (CurrentVolume->DriveLetter != UNICODE_NULL)
     {
         /* Remove the current drive letter */
-        szMountPoint[0] = CurrentVolume->DriveLetter;
-        szMountPoint[1] = L':';
-        szMountPoint[2] = L'\\';
-        szMountPoint[3] = UNICODE_NULL;
-
-        bResult = DeleteVolumeMountPointW(szMountPoint);
+        bResult = DeleteDriveLetter(CurrentVolume->DriveLetter);
         if (bResult == FALSE)
         {
             ConResPuts(StdOut, IDS_ASSIGN_FAIL);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
 
         CurrentVolume->DriveLetter = UNICODE_NULL;
@@ -123,36 +117,34 @@ assign_main(
     if (DriveLetter != UNICODE_NULL)
     {
         /* Assign the new drive letter */
-        szMountPoint[0] = DriveLetter;
-        szMountPoint[1] = L':';
-        szMountPoint[2] = L'\\';
-        szMountPoint[3] = UNICODE_NULL;
-
-        bResult = SetVolumeMountPointW(szMountPoint,
-                                       CurrentVolume->VolumeName);
+        bResult = AssignDriveLetter(CurrentVolume->DeviceName,
+                                    DriveLetter);
         if (bResult == FALSE)
         {
             ConResPuts(StdOut, IDS_ASSIGN_FAIL);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
 
         CurrentVolume->DriveLetter = DriveLetter;
     }
     else
     {
-        /* TODO: Assign the next drive letter */
-#if 0
-        bResult = SetNextDriveLetter(CurrentVolume->VolumeName,
-                                     &CurrentVolume->DriveLetter);
+        bResult = AssignNextDriveLetter(CurrentVolume->DeviceName,
+                                        &CurrentVolume->DriveLetter);
         if (bResult == FALSE)
         {
             ConResPuts(StdOut, IDS_ASSIGN_FAIL);
-            return TRUE;
+            return EXIT_SUCCESS;
         }
-#endif
+
+        if (CurrentVolume->DriveLetter == UNICODE_NULL)
+        {
+            ConResPuts(StdOut, IDS_ASSIGN_NO_MORE_LETTER);
+            return EXIT_SUCCESS;
+        }
     }
 
     ConResPuts(StdOut, IDS_REMOVE_SUCCESS);
 
-    return TRUE;
+    return EXIT_SUCCESS;
 }
