@@ -3,7 +3,7 @@
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     CFontExt definition
  * COPYRIGHT:   Copyright 2019,2020 Mark Jansen <mark.jansen@reactos.org>
- *              Copyright 2019-2025 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
+ *              Copyright 2019-2026 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
  */
 
 #pragma once
@@ -16,10 +16,16 @@ class CFontExt :
     public IDropTarget
 {
     CComHeapPtr<ITEMIDLIST> m_Folder;
+    BOOL m_bDragAccepted = FALSE;
+    HWND m_hwndView = nullptr;
 
 public:
     CFontExt();
     ~CFontExt();
+
+    void SetViewWindow(HWND hwndView);
+    static HRESULT CALLBACK MenuCallBack(IShellFolder *psf, HWND hwndOwner, IDataObject *pdtobj, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    HRESULT CreateForegroundMenu(HWND hwndOwner, UINT cidl, PCUITEMID_CHILD_ARRAY apidl, LPVOID* ppvOut);
 
     // *** IShellFolder2 methods ***
     STDMETHODIMP GetDefaultSearchGUID(GUID *lpguid) override;

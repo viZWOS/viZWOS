@@ -3,7 +3,7 @@
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     CFontExt implementation
  * COPYRIGHT:   Copyright 2019-2021 Mark Jansen <mark.jansen@reactos.org>
- *              Copyright 2019-2025 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
+ *              Copyright 2019-2026 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
  */
 
 #include "precomp.h"
@@ -85,6 +85,27 @@ CFontExt::CFontExt()
 CFontExt::~CFontExt()
 {
     InterlockedDecrement(&g_ModuleRefCnt);
+}
+
+void CFontExt::SetViewWindow(HWND hwndView)
+{
+    m_hwndView = hwndView;
+}
+
+HRESULT CALLBACK
+CFontExt::MenuCallBack(IShellFolder *psf, HWND hwndOwner, IDataObject *pdtobj, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    TRACE("%u, %p, %p\n", uMsg, wParam, lParam);
+    switch (uMsg)
+    {
+        case DFM_MERGECONTEXTMENU:
+            return S_OK; // Yes, I want verbs
+        case DFM_INVOKECOMMAND:
+            return S_FALSE; // Do it for me please
+        case DFM_GETDEFSTATICID:
+            return S_FALSE; // Supposedly "required for Windows 7 to pick a default"
+    }
+    return E_NOTIMPL;
 }
 
 // *** IShellFolder2 methods ***
@@ -259,8 +280,7 @@ STDMETHODIMP CFontExt::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1, PCUID
     DWORD column = lParam & 0x0000FFFF;
     if (sortMode == SHCIDS_ALLFIELDS)
     {
-        UNIMPLEMENTED;
-        result = (int)fontEntry1->Index - (int)fontEntry2->Index;
+        result = StrCmpIW(fontEntry1->Name, fontEntry2->Name);
     }
     else
     {
@@ -278,11 +298,10 @@ STDMETHODIMP CFontExt::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1, PCUID
         case 0xffff:
             /* ROS bug? */
         case FONTEXT_COL_NAME:
-            // These items are already ordered by name
-            result = (int)fontEntry1->Index - (int)fontEntry2->Index;
+            result = StrCmpIW(fontEntry1->Name, fontEntry2->Name);
             break;
         case FONTEXT_COL_FILENAME:
-            result = _wcsicmp(PathFindFileNameW(info1->File()), PathFindFileNameW(info2->File()));
+            result = StrCmpIW(PathFindFileNameW(info1->File()), PathFindFileNameW(info2->File()));
             break;
         case FONTEXT_COL_SIZE:
             result = (int)info1->FileSize().HighPart - info2->FileSize().HighPart;
@@ -313,22 +332,25 @@ STDMETHODIMP CFontExt::CreateViewObject(HWND hwndOwner, REFIID riid, LPVOID *ppv
 
     if (IsEqualIID(riid, IID_IDropTarget))
     {
-        ERR("IDropTarget not implemented\n");
         *ppvOut = static_cast<IDropTarget *>(this);
         AddRef();
         hr = S_OK;
     }
     else if (IsEqualIID(riid, IID_IContextMenu))
     {
-        ERR("IContextMenu not implemented\n");
-        hr = E_NOTIMPL;
+        TRACE("IContextMenu\n");
+        return CFontBackgroundMenu_Create(this, hwndOwner, this, (IContextMenu**)ppvOut);
     }
     else if (IsEqualIID(riid, IID_IShellView))
     {
-        // Just create a default shell folder view, and register ourself as folder
-        SFV_CREATE sfv = { sizeof(SFV_CREATE) };
-        sfv.pshf = this;
-        hr = SHCreateShellFolderView(&sfv, (IShellView**)ppvOut);
+        CComPtr<CFontFolderViewCB> sfviewcb;
+        if (SUCCEEDED(hr = ShellObjectCreator(sfviewcb)))
+        {
+            SFV_CREATE create = { sizeof(create), this, NULL, sfviewcb };
+            hr = SHCreateShellFolderView(&create, (IShellView**)ppvOut);
+            if (SUCCEEDED(hr))
+                sfviewcb->Initialize(this, (IShellView*)*ppvOut, m_Folder);
+        }
     }
 
     return hr;
@@ -362,13 +384,51 @@ STDMETHODIMP CFontExt::GetAttributesOf(UINT cidl, PCUITEMID_CHILD_ARRAY apidl, D
     return S_OK;
 }
 
+HRESULT CFontExt::CreateForegroundMenu(HWND hwndOwner, UINT cidl, PCUITEMID_CHILD_ARRAY apidl, LPVOID* ppvOut)
+{
+    if (cidl <= 0)
+    {
+        ERR("cidl: %u\n", cidl);
+        return E_NOTIMPL;
+    }
+
+    const FontPidlEntry* pEntry = _FontFromIL(apidl[0]);
+    if (!pEntry)
+    {
+        ERR("!pEntry\n");
+        return E_FAIL;
+    }
+    auto info = g_FontCache->Find(pEntry);
+    if (!info)
+    {
+        ERR("!info\n");
+        return E_FAIL;
+    }
+    LPCWSTR extension = PathFindExtensionW(info->File());
+
+    CRegKeyHandleArray keys;
+
+    WCHAR wszClass[MAX_PATH];
+    DWORD dwSize = sizeof(wszClass);
+    if (RegGetValueW(HKEY_CLASSES_ROOT, extension, NULL, RRF_RT_REG_SZ, NULL, wszClass, &dwSize) != ERROR_SUCCESS ||
+        !*wszClass || AddClassKeyToArray(wszClass, keys, keys) != ERROR_SUCCESS)
+    {
+        AddClassKeyToArray(extension, keys, keys);
+
+        if (cidl == 1)
+            AddClassKeyToArray(L"Unknown", keys, keys);
+    }
+
+    return CDefFolderMenu_Create2(m_Folder, hwndOwner, cidl, apidl, this, MenuCallBack, keys, keys, (IContextMenu**)ppvOut);
+}
+
 STDMETHODIMP CFontExt::GetUIObjectOf(HWND hwndOwner, UINT cidl, PCUITEMID_CHILD_ARRAY apidl, REFIID riid, UINT * prgfInOut, LPVOID * ppvOut)
 {
     if (riid == IID_IContextMenu ||
         riid == IID_IContextMenu2 ||
         riid == IID_IContextMenu3)
     {
-        return _CFontMenu_CreateInstance(hwndOwner, cidl, apidl, this, riid, ppvOut);
+        return CreateForegroundMenu(hwndOwner, cidl, apidl, ppvOut);
     }
     else if (riid == IID_IExtractIconA || riid == IID_IExtractIconW)
     {
@@ -397,8 +457,19 @@ STDMETHODIMP CFontExt::GetUIObjectOf(HWND hwndOwner, UINT cidl, PCUITEMID_CHILD_
         }
         else
         {
-            ERR("IID_IDataObject with cidl == 0 UNIMPLEMENTED\n");
+            CComPtr<IDataObject> pDataObj;
+            HRESULT hr = OleGetClipboard(&pDataObj);
+            if (FAILED_UNEXPECTEDLY(hr))
+                return E_FAIL;
+            *ppvOut = pDataObj.Detach();
+            return S_OK;
         }
+    }
+    else if (riid == IID_IDropTarget)
+    {
+        *ppvOut = static_cast<IDropTarget*>(this);
+        AddRef();
+        return S_OK;
     }
 
     //ERR("%s(riid=%S) UNIMPLEMENTED\n", __FUNCTION__, g2s(riid));
@@ -469,7 +540,7 @@ STDMETHODIMP CFontExt::Initialize(LPCITEMIDLIST pidl)
         return hr;
     }
 
-    if (_wcsicmp(PidlPath, FontsDir))
+    if (StrCmpIW(PidlPath, FontsDir))
     {
         ERR("CFontExt View initializing on unexpected folder: '%S'\n", PidlPath);
         return E_FAIL;
@@ -492,18 +563,25 @@ STDMETHODIMP CFontExt::GetClassID(CLSID *lpClassId)
 // *** IDropTarget methods ***
 STDMETHODIMP CFontExt::DragEnter(IDataObject* pDataObj, DWORD grfKeyState, POINTL pt, DWORD* pdwEffect)
 {
-    *pdwEffect = DROPEFFECT_NONE;
+    m_bDragAccepted = CheckDataObject(pDataObj);
+    if (!m_bDragAccepted)
+    {
+        *pdwEffect = DROPEFFECT_NONE;
+        return E_FAIL;
+    }
 
-    CDataObjectHIDA cida(pDataObj);
-    if (FAILED_UNEXPECTEDLY(cida.hr()))
-        return cida.hr();
-
-    *pdwEffect = DROPEFFECT_COPY;
+    *pdwEffect &= DROPEFFECT_COPY;
     return S_OK;
 }
 
 STDMETHODIMP CFontExt::DragOver(DWORD grfKeyState, POINTL pt, DWORD* pdwEffect)
 {
+    if (!m_bDragAccepted)
+    {
+        *pdwEffect = DROPEFFECT_NONE;
+        return E_FAIL;
+    }
+    *pdwEffect &= DROPEFFECT_COPY;
     return S_OK;
 }
 
@@ -514,46 +592,29 @@ STDMETHODIMP CFontExt::DragLeave()
 
 STDMETHODIMP CFontExt::Drop(IDataObject* pDataObj, DWORD grfKeyState, POINTL pt, DWORD* pdwEffect)
 {
-    *pdwEffect = DROPEFFECT_NONE;
+    ATLASSERT(m_hwndView);
+    HRESULT hr = InstallFontsFromDataObject(m_hwndView, pDataObj);
 
-    CDataObjectHIDA cida(pDataObj);
-    if (!cida || cida->cidl <= 0)
-        return E_UNEXPECTED;
-
-    PCUIDLIST_ABSOLUTE pidlParent = HIDA_GetPIDLFolder(cida);
-    if (!pidlParent)
+    CStringW text, title;
+    title.LoadStringW(IDS_REACTOS_FONTS_FOLDER);
+    if (FAILED_UNEXPECTEDLY(hr))
     {
-        ERR("pidlParent is NULL\n");
-        return E_FAIL;
+        // Show error message
+        text.LoadStringW(IDS_INSTALL_FAILED);
+        MessageBoxW(m_hwndView, text, title, MB_ICONERROR);
+    }
+    else if (hr == S_OK)
+    {
+        // Refresh font cache and notify the system about the font change
+        if (g_FontCache)
+            g_FontCache->Read();
+
+        SendMessageTimeoutW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0, SMTO_ABORTIFHUNG, 1000, NULL);
+
+        // Show successful message
+        text.LoadStringW(IDS_INSTALL_OK);
+        MessageBoxW(m_hwndView, text, title, MB_ICONINFORMATION);
     }
 
-    CAtlArray<PCUIDLIST_RELATIVE> apidl;
-    for (UINT n = 0; n < cida->cidl; ++n)
-    {
-        PCUIDLIST_RELATIVE pidlRelative = HIDA_GetPIDLItem(cida, n);
-        if (!pidlRelative)
-            return E_FAIL;
-
-        apidl.Add(pidlRelative);
-    }
-
-    CStringW strMessage;
-    if (InstallFontFiles(strMessage, pidlParent, cida->cidl, &apidl[0]) != S_OK)
-    {
-        // TODO: Show message
-        return E_FAIL;
-    }
-
-    // Invalidate our cache
-    g_FontCache->Read();
-
-    // Notify the system that a font was added
-    SendMessageW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0);
-
-    // Notify the shell that the folder contents are changed
-    SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW, g_FontCache->FontPath().GetString(), NULL);
-
-    // TODO: Show message
-
-    return S_OK;
+    return hr;
 }
